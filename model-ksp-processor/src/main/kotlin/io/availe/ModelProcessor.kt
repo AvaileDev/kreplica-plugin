@@ -7,6 +7,7 @@ import com.google.devtools.ksp.processing.SymbolProcessorEnvironment
 import com.google.devtools.ksp.symbol.KSAnnotated
 import com.google.devtools.ksp.symbol.KSClassDeclaration
 import io.availe.builders.buildModel
+import io.availe.builders.generateStubs
 import io.availe.helpers.MODEL_ANNOTATION_NAME
 import io.availe.helpers.getFrameworkDeclarations
 import io.availe.helpers.isNonHiddenModelAnnotation
@@ -15,11 +16,13 @@ import kotlinx.serialization.json.Json
 import java.io.OutputStreamWriter
 
 class ModelProcessor(private val env: SymbolProcessorEnvironment) : SymbolProcessor {
-    private var invoked = false
+    private var finalized = false
 
     override fun process(resolver: Resolver): List<KSAnnotated> {
-        if (invoked) return emptyList()
-        env.logger.info("--- KREPLICA-KSP: ModelProcessor STARTING ---")
+        if (finalized) {
+            return emptyList()
+        }
+
         val modelSymbols = resolver
             .getSymbolsWithAnnotation(MODEL_ANNOTATION_NAME)
             .filterIsInstance<KSClassDeclaration>()
@@ -27,17 +30,27 @@ class ModelProcessor(private val env: SymbolProcessorEnvironment) : SymbolProces
             .toList()
 
         if (modelSymbols.isEmpty()) {
-            env.logger.info("--- KREPLICA-KSP: No symbols with @Replicate annotation found in this module. ---")
-        } else {
-            env.logger.info("--- KREPLICA-KSP: Found ${modelSymbols.size} symbols with @Replicate annotation. ---")
+            return emptyList()
         }
+
+        val hasErrorTypes = modelSymbols.any {
+            it.getAllProperties().any { prop -> prop.type.resolve().isError }
+        }
+
+        if (hasErrorTypes) {
+            env.logger.info("--- KREPLICA-KSP: Found unresolved types. Generating stubs (Round 1) ---")
+            generateStubs(modelSymbols, env.codeGenerator, env)
+            return modelSymbols
+        }
+
+        env.logger.info("--- KREPLICA-KSP: All types resolved. Generating final models (Round 2) ---")
 
         val frameworkDecls = getFrameworkDeclarations(resolver)
         val models = modelSymbols.map { decl ->
             buildModel(decl, resolver, frameworkDecls, env)
         }
         writeModelsToFile(models, modelSymbols)
-        invoked = true
+        finalized = true
         env.logger.info("--- KREPLICA-KSP: ModelProcessor FINISHED ---")
         return emptyList()
     }
