@@ -103,8 +103,14 @@ internal fun buildModel(
 
     val allOptInMarkers = extractAllOptInMarkers(declaration).takeIf { it.isNotEmpty() }
 
+    val modelName = if (versioningInfo != null) {
+        "${versioningInfo.baseModelName}.${declaration.simpleName.asString()}"
+    } else {
+        declaration.simpleName.asString()
+    }
+
     return Model(
-        name = declaration.simpleName.asString(),
+        name = modelName,
         packageName = declaration.packageName.asString(),
         properties = properties,
         variants = modelVariants,

@@ -4,18 +4,8 @@ import com.google.devtools.ksp.processing.Resolver
 import com.google.devtools.ksp.processing.SymbolProcessorEnvironment
 import com.google.devtools.ksp.symbol.KSClassDeclaration
 import com.google.devtools.ksp.symbol.KSPropertyDeclaration
-import com.google.devtools.ksp.symbol.Modifier
 import io.availe.helpers.*
 import io.availe.models.*
-
-private fun isGeneratedVariantContainer(declaration: KSClassDeclaration?): Boolean {
-    if (declaration == null || Modifier.SEALED !in declaration.modifiers) return false
-    val nestedDecls = declaration.declarations
-        .filterIsInstance<KSClassDeclaration>()
-        .map { it.simpleName.asString() }
-        .toSet()
-    return Variant.entries.all { it.suffix in nestedDecls }
-}
 
 internal fun processProperty(
     propertyDeclaration: KSPropertyDeclaration,
@@ -79,26 +69,30 @@ internal fun processProperty(
     val propertyAnnotations: List<AnnotationModel>? =
         propertyDeclaration.annotations.toAnnotationModels(frameworkDeclarations)
 
-    val foreignDecl = resolver.getClassDeclarationByName(
-        resolver.getKSNameFromString(typeInfo.qualifiedName)
-    )
-    val isSourceForeignModel = foreignDecl?.annotations?.any { it.isAnnotation(MODEL_ANNOTATION_NAME) } == true
-    val isGeneratedForeignModel = isGeneratedVariantContainer(foreignDecl)
-    val isForeignModel = isSourceForeignModel || isGeneratedForeignModel
+    val typeDecl = ksType.declaration as? KSClassDeclaration
+    val foreignModelKey: String? = if (typeDecl != null) {
+        val parentDecl = typeDecl.parentDeclaration as? KSClassDeclaration
+        if (parentDecl != null && parentDecl.simpleName.asString().endsWith("Schema")) {
+            val baseName = parentDecl.simpleName.asString().removeSuffix("Schema")
+            val versionName = typeDecl.simpleName.asString()
+            "$baseName.$versionName"
+        } else if (typeDecl.simpleName.asString().endsWith("Schema")) {
+            typeDecl.simpleName.asString().removeSuffix("Schema")
+        } else {
+            null
+        }
+    } else {
+        null
+    }
 
-    environment.logger.logging(
-        "processProperty name=${propertyDeclaration.simpleName.asString()} " +
-                "qualified=${typeInfo.qualifiedName} isValueClass=${typeInfo.isValueClass} foreign=$isForeignModel"
-    )
-
-    return if (isForeignModel && foreignDecl != null) {
-        createForeignProperty(
-            propertyDeclaration,
-            typeInfo,
-            foreignDecl,
-            propertyVariants,
-            propertyAnnotations,
-            finalNominalTyping
+    return if (foreignModelKey != null) {
+        ForeignProperty(
+            name = propertyDeclaration.simpleName.asString(),
+            typeInfo = typeInfo,
+            foreignModelName = foreignModelKey,
+            variants = propertyVariants,
+            annotations = propertyAnnotations,
+            nominalTyping = finalNominalTyping
         )
     } else {
         RegularProperty(
@@ -109,22 +103,4 @@ internal fun processProperty(
             nominalTyping = finalNominalTyping
         )
     }
-}
-
-private fun createForeignProperty(
-    propertyDeclaration: KSPropertyDeclaration,
-    typeInformation: TypeInfo,
-    foreignModelDeclaration: KSClassDeclaration,
-    variants: Set<Variant>,
-    annotations: List<AnnotationModel>?,
-    nominalTyping: String?
-): ForeignProperty {
-    return ForeignProperty(
-        name = propertyDeclaration.simpleName.asString(),
-        typeInfo = typeInformation,
-        foreignModelName = foreignModelDeclaration.simpleName.asString(),
-        variants = variants,
-        annotations = annotations,
-        nominalTyping = nominalTyping
-    )
 }
