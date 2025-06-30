@@ -16,7 +16,7 @@ private val logger = LoggerFactory.getLogger("io.availe.generators")
 
 fun generateDataClasses(primaryModels: List<Model>, allModels: List<Model>) {
     val allModelsByBaseName = allModels.groupBy { it.isVersionOf ?: it.name }
-    val modelsByName = allModels.associateBy { it.packageName + "." + it.name }
+    val modelsByName = allModels.associateBy { it.name }
     val valueClassNamesByBase = allModelsByBaseName.mapValues { (base, versions) ->
         determineValueClassNames(base, versions)
     }
@@ -37,7 +37,8 @@ private fun generateSchemaFile(
 ) {
     val isVersioned = versions.first().isVersionOf != null
     val representativeModel = versions.first()
-    val schemaFileName = (if (isVersioned) baseName else representativeModel.name) + SCHEMA_SUFFIX
+    val schemaFileName =
+        (if (isVersioned) baseName else representativeModel.name.substringAfterLast('.')) + SCHEMA_SUFFIX
     logger.info("Generating schema file: $schemaFileName in package ${representativeModel.packageName}")
     val fileBuilder = FileSpec.builder(representativeModel.packageName, schemaFileName)
         .addFileComment(FILE_HEADER_COMMENT)
@@ -69,7 +70,8 @@ private fun generateSchemaFile(
         versions.forEach { version ->
             val dtos =
                 generateDataTransferObjects(version, valueClassNames, existingValueClasses, modelsByName)
-            val versionClass = TypeSpec.interfaceBuilder(version.name)
+            val versionClassName = version.name.substringAfterLast('.')
+            val versionClass = TypeSpec.interfaceBuilder(versionClassName)
                 .addModifiers(KModifier.SEALED)
                 .addSuperinterface(ClassName(version.packageName, schemaFileName))
                 .apply {
@@ -79,7 +81,7 @@ private fun generateSchemaFile(
                         addAnnotation(ClassName("kotlinx.serialization", "Serializable"))
                     }
                 }
-                .addKdoc(generateVersionBoxKdoc(version.name, version.schemaVersion!!))
+                .addKdoc(generateVersionBoxKdoc(versionClassName, version.schemaVersion!!))
                 .addTypes(dtos)
                 .build()
             topLevelClassBuilder.addType(versionClass)
@@ -171,7 +173,8 @@ private fun determineValueClassNames(
     return versions.flatMap { version ->
         version.properties.filterIsInstance<RegularProperty>().map { property ->
             val valueClassName = if (conflictingProperties.contains(property.name)) {
-                NamingUtils.generateValueClassName("${baseName}${version.name}", property.name)
+                val versionClassName = version.name.substringAfterLast('.')
+                NamingUtils.generateValueClassName("${baseName}${versionClassName}", property.name)
             } else {
                 NamingUtils.generateValueClassName(baseName, property.name)
             }

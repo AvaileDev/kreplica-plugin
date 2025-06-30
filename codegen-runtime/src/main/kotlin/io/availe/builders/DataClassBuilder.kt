@@ -40,8 +40,9 @@ fun buildDataTransferObjectClass(
 
     if (model.isVersionOf != null) {
         val schemaName = model.isVersionOf!! + "Schema"
+        val versionClassName = model.name.substringAfterLast('.')
 
-        val versionInterface = ClassName(model.packageName, schemaName, model.name)
+        val versionInterface = ClassName(model.packageName, schemaName, versionClassName)
         typeSpecBuilder.addSuperinterface(versionInterface)
 
         val variantKindInterface = ClassName(model.packageName, schemaName, "${variant.suffix}Variant")

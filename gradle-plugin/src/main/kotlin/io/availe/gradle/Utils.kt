@@ -46,7 +46,17 @@ fun registerKReplicaCodegenTask(
             .withPropertyName("primaryModelJson")
         inputs.files(extension.contextModelJsons).withPathSensitivity(PathSensitivity.ABSOLUTE)
             .withPropertyName("contextModelJsons")
+
+        onlyIf {
+            extension.primaryModelJson.get().asFile.exists()
+        }
+
         doFirst {
+            project.delete {
+                delete(project.layout.buildDirectory.dir("generated/ksp/main/kotlin"))
+                delete(project.layout.buildDirectory.dir("generated/ksp/metadata/commonMain/kotlin"))
+            }
+
             val execArgs = mutableListOf<String>()
             val primaryFile = extension.primaryModelJson.get().asFile
             if (primaryFile.exists()) {
